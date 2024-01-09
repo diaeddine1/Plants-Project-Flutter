@@ -1,0 +1,30 @@
+name: flutter_plants
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.2.3 <4.0.0'
+
+dependencies:
+  firebase_core: ^2.24.2
+  firebase_ui_auth: ^1.12.1
+  firebase_auth: ^4.16.0
+  firebase_storage: ^11.5.4
+  cloud_firestore: ^4.14.0
+  image_picker: ^1.0.7
+  file_picker: ^4.0.10
+  cached_network_image: ^3.3.0
+  datetime_picker_formfield_new: ^2.1.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - asset/
