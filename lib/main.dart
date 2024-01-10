@@ -51,8 +51,8 @@ class _MainPageState extends State<MainPage> {
       bottomNavigationBar: BottomNavigationBar(
         items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.local_activity),
-            label: 'Activités',
+            icon: Icon(Icons.grass),
+            label: 'Plants',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.add),

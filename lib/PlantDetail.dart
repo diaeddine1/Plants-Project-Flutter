@@ -4,18 +4,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_plants/HomePage.dart';
 
 class Comment {
+  final String documentId; // Unique identifier for the comment document
   final String userEmail;
   final String text;
   final DateTime timestamp;
 
   Comment({
+    required this.documentId,
     required this.userEmail,
     required this.text,
     required this.timestamp,
   });
 
-  factory Comment.fromFirestore(Map<String, dynamic> data) {
+  factory Comment.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return Comment(
+      documentId: doc.id,
       userEmail: data['userEmail'] ?? '',
       text: data['text'] ?? '',
       timestamp: (data['timestamp'] as Timestamp).toDate(),
@@ -35,7 +39,7 @@ class PlantDetailPage extends StatefulWidget {
 class _PlantDetailPageState extends State<PlantDetailPage> {
   TextEditingController _commentController = TextEditingController();
   late User _currentUser;
-  bool _isNewToOldOrder = true; 
+  bool _isNewToOldOrder = true;
 
   @override
   void initState() {
@@ -109,7 +113,7 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
                       style: TextStyle(
                         fontSize: 18.0,
                         fontWeight: FontWeight.bold,
-                        color: Colors.teal,
+                        color: Colors.red,
                       ),
                     ),
                   ],
@@ -153,88 +157,209 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
     );
   }
 
-  void _postComment() {
-    String commentText = _commentController.text.trim();
+  // Update the _postComment method
+void _postComment() {
+  String commentText = _commentController.text.trim();
 
-    if (commentText.isNotEmpty) {
-      Comment comment = Comment(
-        userEmail: _currentUser.email ?? '',
-        text: commentText,
-        timestamp: DateTime.now(),
+  if (commentText.isNotEmpty) {
+    Comment comment = Comment(
+      documentId: '', // This will be set after adding to Firestore
+      userEmail: _currentUser.email ?? '',
+      text: commentText,
+      timestamp: DateTime.now(),
+    );
+
+    FirebaseFirestore.instance
+        .collection('plants')
+        .doc(widget.plant.name)
+        .collection('comments')
+        .add({
+      'userEmail': comment.userEmail,
+      'text': comment.text,
+      'timestamp': FieldValue.serverTimestamp(),
+    }).then((value) {
+      // Create a new instance with the updated documentId
+      Comment updatedComment = Comment(
+        documentId: value.id,
+        userEmail: comment.userEmail,
+        text: comment.text,
+        timestamp: comment.timestamp,
       );
-
-      FirebaseFirestore.instance
-          .collection('plants')
-          .doc(widget.plant.name)
-          .collection('comments')
-          .add({
-        'userEmail': comment.userEmail,
-        'text': comment.text,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
 
       setState(() {
         _commentController.clear();
       });
-    }
+    });
   }
+}
 
-  Widget _buildCommentList() {
-    return Column(
-      children: [
-        _buildSortDropdown(),
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('plants')
-              .doc(widget.plant.name)
-              .collection('comments')
-              .orderBy(
-                'timestamp',
-                descending: _isNewToOldOrder,
-              )
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return CircularProgressIndicator();
-            }
 
-            var comments = snapshot.data!.docs.map((doc) {
-              Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-              return Comment.fromFirestore(data);
-            }).toList();
+ Widget _buildCommentList() {
+  return Column(
+    children: [
+      _buildSortDropdown(),
+      StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('plants')
+            .doc(widget.plant.name)
+            .collection('comments')
+            .orderBy(
+              'timestamp',
+              descending: _isNewToOldOrder,
+            )
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return CircularProgressIndicator();
+          }
 
-            return Column(
-              children: comments.map((comment) {
-                return Card(
-                  margin: EdgeInsets.symmetric(vertical: 8.0),
-                  child: ListTile(
-                    title: Text(style:TextStyle(fontWeight: FontWeight.bold),
-                      comment.userEmail),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(style:TextStyle(
+          var comments = snapshot.data!.docs.map((doc) {
+            return Comment.fromFirestore(doc);
+          }).toList();
+
+          return Column(
+            children: comments.map((comment) {
+              bool isCurrentUserComment =
+                  comment.userEmail == _currentUser.email;
+
+              return Card(
+                margin: EdgeInsets.symmetric(vertical: 8.0),
+                child: ListTile(
+                  title: Text(
+                    comment.userEmail,
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        comment.text,
+                        style: TextStyle(
                           color: Colors.black,
                           fontSize: 18.0,
-                          ),
-                          comment.text),
-                        Text(
-                          'Posted on: ${_formatTimestamp(comment.timestamp)}',
-                          style: TextStyle(
-                            color: Colors.grey[800],
-                            fontSize: 12.0,
-                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Posted on: ${_formatTimestamp(comment.timestamp)}',
+                            style: TextStyle(
+                              color: Colors.grey[800],
+                              fontSize: 12.0,
+                            ),
+                          ),
+                          if (isCurrentUserComment)
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.edit),
+                                  onPressed: () => _editComment(comment),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.delete),
+                                  onPressed: () => _deleteComment(comment),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
-                );
-              }).toList(),
-            );
-          },
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    ],
+  );
+}
+
+void _editComment(Comment comment) {
+  TextEditingController _editController = TextEditingController(text: comment.text);
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text('Edit Comment'),
+        content: TextField(
+          controller: _editController,
+          decoration: InputDecoration(
+            hintText: 'Edit your comment...',
+          ),
         ),
-      ],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              String editedText = _editController.text.trim();
+              if (editedText.isNotEmpty) {
+                _performEditComment(comment, editedText);
+                Navigator.pop(context);
+              }
+            },
+            child: Text('Save'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+void _performEditComment(Comment comment, String editedText) {
+  FirebaseFirestore.instance
+      .collection('plants')
+      .doc(widget.plant.name)
+      .collection('comments')
+      .doc(comment.documentId)
+      .update({
+    'text': editedText,
+    'timestamp': DateTime.now(), 
+  });
+}
+
+
+
+
+  void _deleteComment(Comment comment) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Comment'),
+          content: Text('Are you sure you want to delete this comment?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                _performDeleteComment(comment);
+                Navigator.pop(context);
+              },
+              child: Text('Delete'),
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  void _performDeleteComment(Comment comment) {
+    FirebaseFirestore.instance
+        .collection('plants')
+        .doc(widget.plant.name)
+        .collection('comments')
+        .doc(comment.documentId)
+        .delete();
+
+    // You may want to refresh the comment list after deletion
+    // Fetch comments again or use setState if using a StreamBuilder
   }
 
   Widget _buildSortDropdown() {
@@ -269,4 +394,3 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
     return '${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour}:${timestamp.minute}';
   }
 }
-
